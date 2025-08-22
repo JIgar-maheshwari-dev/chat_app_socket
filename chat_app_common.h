@@ -1,0 +1,64 @@
+#ifndef CHAT_APP_COMMON_H
+#define CHAT_APP_COMMON_H
+
+#include <stdint.h>
+
+#define BUILD_DATE __DATE__
+#define BUILD_TIME __TIME__
+
+#ifndef OWNER
+#define OWNER "Unknown"
+#endif
+
+#define MAX_MSG_LEN          512
+#define INVALID_FD          -1
+#define SERVER_UNIQUEUE_ID  "ksdfgdhfkevhriuercwieru87354fuykhhg*((#$"
+#define UNDEF_NAME          "NAME_NOT_DEFINED"
+#define DISCONNECT_CMD       "disconnect"
+
+
+typedef enum{
+    MSG_CLIENT_RX_TYPE=0,
+    MSG_CLIENT_TX_TYPE,
+    MSG_CLIENT_ACK_TYPE,
+    MSG_CLIENT_NACK,
+    MSG_SET_NAME_REQ_TYPE,
+    MSG_SET_NAME_ACK_TYPE,
+    MSG_SET_NAME_NACK_TYPE,
+    MSG_SERVER,
+    MSG_CONN_ESTABLISH_REQ,
+    MSG_CONN_ESTABLISH_ACK,
+    MSG_GET_CLIENT_LIST_TYPE,
+
+    MSG_CONNECT_TO_CLIENT,
+    MSG_CONNECTION_REQ_RX,
+    MSG_CLIENT_BUSY,
+    MSG_CLIENT_FREE,
+    MSG_CLIENT_ACCEPT_CONNECTION,
+    MSG_CLIENT_DECLINE_CONNECTION,
+    MSG_CLIENT_DECLINE_CONNECTION_ACK,
+    MSG_CLIENT_NOT_EXIST,
+    MSG_ATTEMPT_TO_CONNECT_TO_SELF,
+    MSG_CLIENT_STATUS_REQ_PENDING,
+    MSG_CLIENT_ACCEPT_CONNECTION_ACK,
+    MSG_CLIENT_NO_MORE_FREE,
+    MSG_CLIENT_NO_MORE_EXIST,
+    MSG_CLIENT_TERMINATION,
+    MSG_CLIENT_DISCONNECTED,
+    MSG_CLIENT_CHAT_READY,
+    MSG_CLIENT_CHANGE_CONN_FD_REQ,
+    MSG_TYPE_MAX
+}msg_type_t;
+
+typedef struct {
+    char buffer[MAX_MSG_LEN];
+}msg_data_t;
+
+typedef struct 
+{
+    uint8_t to_client_id;
+    msg_type_t msg_type;
+    msg_data_t msg_data;
+}msg_t;
+
+#endif
