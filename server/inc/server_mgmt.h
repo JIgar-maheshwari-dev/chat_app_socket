@@ -8,7 +8,6 @@
 #define MAX_LISTEN           20
 #define SERVER_PORT          12345
 #define MAX_CLIENT           20
-#define MAX_CLIENT_NAME_LEN  64
 
 #define MAX_RECV_BUFFER_LEN  2048
 

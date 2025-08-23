@@ -110,7 +110,8 @@ client_err_type_t check_lib_params(void)
 	else if( (!cb_parameters->client_shut_down_flag) || 
 	         (!cb_parameters->server_shut_down_flag) || 
 			 (!cb_parameters->msg_handle_cb) ||
-			 (!cb_parameters->busy_in_chat)
+			 (!cb_parameters->busy_in_chat)  ||
+			 (!cb_parameters->connected_client_name)
 			)
 	{
 		LOGE("Any of cb_param is null.");
@@ -262,7 +263,7 @@ void* io_thread(void* arg)
 			}
             else if (bytes == 0)
             {
-                LOGI("Server shut-down detected.");
+                printf("Server shut-down detected.\n");
                 LOGI("Setting client/server shutdow flag.");
 				*cb_parameters->server_shut_down_flag = true;
 				*cb_parameters->client_shut_down_flag = true;
@@ -428,13 +429,17 @@ void handle_rx_msg_lib(int sock,msg_t rx_msg)
 			conn_request_rx = false;
 			LOGI("Setting busy_in_chat to true.");
 			*(cb_parameters->busy_in_chat)=true;
+			LOGI("Setting connected client name to : %s.",rx_msg.msg_data.buffer);
+			strcpy(cb_parameters->connected_client_name,rx_msg.msg_data.buffer);
 			break;
 
 		case MSG_CLIENT_CHAT_READY:
 			LOGI("Setting busy_in_chat to true.");
+			LOGI("Setting connected client name to : %s.",rx_msg.msg_data.buffer);
+			strcpy(cb_parameters->connected_client_name,rx_msg.msg_data.buffer);
 			*(cb_parameters->busy_in_chat)=true;
 			break;
-
+		
 		case MSG_CLIENT_NO_MORE_FREE:
 		case MSG_CLIENT_TERMINATION:
 		case MSG_CLIENT_DISCONNECTED:
@@ -442,6 +447,8 @@ void handle_rx_msg_lib(int sock,msg_t rx_msg)
 			conn_request_rx = false;
 			LOGI("Setting busy_in_chat to false.");
 			*(cb_parameters->busy_in_chat)=false;
+			LOGI("Setting connected client name to default.");
+			strcpy(cb_parameters->connected_client_name,UNDEF_NAME);
 			break;
 	}
 }

@@ -191,6 +191,8 @@ void  handle_send_msg_to_client(char *send_msg_str)
         printf("You are quittig the chat.\n");
         LOGI("Settig busy_in_chat flag false.");
         *(cb_parameters->busy_in_chat) = false;
+        LOGI("Setting connected client name to default.");
+        strcpy(cb_parameters->connected_client_name,UNDEF_NAME);
     }
 
     LOGI("msg send to another client in chat communication.");

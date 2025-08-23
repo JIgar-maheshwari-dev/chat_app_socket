@@ -9,12 +9,14 @@ client_err_type_t msg_handle_cb(msg_t rx_msg);
 bool server_shut_down_flag = false;
 bool client_shut_down_flag = false;
 bool busy_in_chat          = false;
+char connected_client_name[MAX_CLIENT_NAME_LEN]=UNDEF_NAME;
 
 lib_params_t params_send_to_lib={
 	.client_shut_down_flag = &client_shut_down_flag,
 	.server_shut_down_flag = &server_shut_down_flag,
 	.busy_in_chat          = &busy_in_chat,
-	.msg_handle_cb         = msg_handle_cb
+	.msg_handle_cb         = msg_handle_cb,
+	.connected_client_name = connected_client_name
 };
 
 int main(int argc,char** argv)
@@ -38,6 +40,7 @@ int main(int argc,char** argv)
 	show_help();
 
 	ret = chat_on();
+	printf("Closing the client.\n");
 }
 
 client_err_type_t msg_handle_cb(msg_t rx_msg)
@@ -67,6 +70,7 @@ client_err_type_t msg_handle_cb(msg_t rx_msg)
 
 		case MSG_CLIENT_ACCEPT_CONNECTION_ACK:
 			printf("[ %s ] accepted your connection request.\n",rx_msg.msg_data.buffer);
+			printf("You can chat now.\n");
 			break;
 
 		case MSG_CLIENT_NO_MORE_FREE:
@@ -106,7 +110,7 @@ client_err_type_t msg_handle_cb(msg_t rx_msg)
 			break;
 
 		case MSG_CLIENT_RX_TYPE:
-			printf("[ %s ]\n",rx_msg.msg_data.buffer);
+			printf("[ %s ] : [ %s ]\n",connected_client_name, rx_msg.msg_data.buffer);
 			break;
 
 		default:

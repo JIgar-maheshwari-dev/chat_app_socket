@@ -15,6 +15,7 @@
 #define SERVER_UNIQUEUE_ID  "ksdfgdhfkevhriuercwieru87354fuykhhg*((#$"
 #define UNDEF_NAME          "NAME_NOT_DEFINED"
 #define DISCONNECT_CMD       "disconnect"
+#define MAX_CLIENT_NAME_LEN  64
 
 typedef enum{
     MSG_CLIENT_RX_TYPE=0,

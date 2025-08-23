@@ -35,6 +35,7 @@ typedef struct
     bool *server_shut_down_flag;
     bool *conn_request_rx;
     bool *busy_in_chat;
+    char* connected_client_name;
     client_err_type_t (*msg_handle_cb)(msg_t rx_msg);
 }lib_params_t;
 
