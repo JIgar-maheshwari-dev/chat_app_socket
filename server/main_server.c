@@ -6,9 +6,8 @@ int main()
 {
     srv_err_type ret = init_srv();
     if(ret!=SERVER_SUCC) return -1;
-    LOGI("[ server ] init done\n");
 
     ret = wait_for_client_conn_and_accept();
-    LOGE("[ server ] terminating, reason : %d \n",ret);
+    LOGI("[ server ] terminating, reason : %d .",ret);
     return 0;
 }

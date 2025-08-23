@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "logger.h"
 #include "user_iterectaions.h"
 
 typedef enum{
@@ -50,7 +51,7 @@ void process_send_msg(char *send_msg_buffer)
 {
     if(!send_msg_buffer) 
     {
-        printf("[ %s ] Null ptr found.\n",__FUNCTION__);
+        LOGE("Null ptr found.");
         return;
     }
 
@@ -60,24 +61,22 @@ void process_send_msg(char *send_msg_buffer)
         return;
     }
 
-    // printf("Processed %s msg.\n",send_msg_buffer);
-
     msg_t conn_response_msg={0};
 
     if(conn_request_rx && (0==strcmp(send_msg_buffer,REQ_ACCEPT_STR)))
     {
         conn_request_rx = false;
         conn_response_msg.msg_type=MSG_CLIENT_ACCEPT_CONNECTION;
+        LOGI("sending : Connection request accept response.");
         send_msg_to_server(conn_response_msg);
-        printf("sending : Connection request accept response.\n");
         return;
     }
     else if(conn_request_rx && (0==strcmp(send_msg_buffer,REQ_DECLINE_STR)))
     {
         conn_request_rx = false;
         conn_response_msg.msg_type=MSG_CLIENT_DECLINE_CONNECTION;
+        LOGI("sending : Connection request decline response.");
         send_msg_to_server(conn_response_msg);
-        printf("sending : Connection request decline response.\n");
         return;
     }
     else if( conn_request_rx )
@@ -105,7 +104,6 @@ void process_send_msg(char *send_msg_buffer)
 
             if(name) 
             {
-                printf("Setting name to : %s .\n",name);
                 connect_with_client(name);
             }
             else 
@@ -116,6 +114,7 @@ void process_send_msg(char *send_msg_buffer)
         break;
 
         case CMD_TYPE_DISCONNECT:
+            printf("You are not connected to anyone.\n");
             break;
 
         case CMD_TYPE_SET_NAME:
@@ -125,7 +124,7 @@ void process_send_msg(char *send_msg_buffer)
 
             if(name) 
             {
-                printf("Setting name to : %s .\n",name);
+                LOGI("Setting name to : %s .",name);
                 set_my_name(name);
             }
             else 
@@ -141,6 +140,7 @@ void process_send_msg(char *send_msg_buffer)
         
         case CMD_TYPE_CLEAR_SCREEN:
         {
+            LOGI("Clearing the screen.");
             system("clear");
             show_help();
         }
@@ -177,7 +177,7 @@ void  handle_send_msg_to_client(char *send_msg_str)
 {
     if(!send_msg_str)
     {
-        printf("[ %s ] Null ptr found.\n",__FUNCTION__);
+        LOGE("Null ptr found.");
         return;
     }
 
@@ -188,8 +188,10 @@ void  handle_send_msg_to_client(char *send_msg_str)
 
     if(0==strcmp(send_msg_str,DISCONNECT_CMD))
     {
+        printf("You are quittig the chat.\n");
+        LOGI("Settig busy_in_chat flag false.");
         *(cb_parameters->busy_in_chat) = false;
     }
 
-    printf("msg send, chat communication.\n");
+    LOGI("msg send to another client in chat communication.");
 }

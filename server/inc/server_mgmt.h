@@ -12,6 +12,17 @@
 
 #define MAX_RECV_BUFFER_LEN  2048
 
+#define LOCK_CLIENT_DATA_MUTEX() do {       \
+    LOGD("Locking client_data_mutex");      \
+    pthread_mutex_lock(&client_data_mutex); \
+} while(0)
+
+#define UNLOCK_CLIENT_DATA_MUTEX() do {       \
+    LOGD("Unlockig client_data_mutex");      \
+    pthread_mutex_unlock(&client_data_mutex); \
+} while(0)
+
+
 typedef enum
 {
     SERVER_SUCC=0,

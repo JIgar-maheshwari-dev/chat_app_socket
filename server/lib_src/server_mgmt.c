@@ -9,11 +9,47 @@
 #include <signal.h>
 #include <sys/select.h>
 #include <poll.h>
+#include "logger.h"
 #include "server_mgmt.h"
 #include "server_queue.h"
 
 
+
 /* GLOBAL VARIABLES */
+
+const char *msgTypeStr[] = {
+	"UNDEFINED_MSG_TYPE",
+    "MSG_CLIENT_RX_TYPE",
+    "MSG_CLIENT_TX_TYPE",
+    "MSG_CLIENT_ACK_TYPE",
+    "MSG_CLIENT_NACK",
+    "MSG_SET_NAME_REQ_TYPE",
+    "MSG_SET_NAME_ACK_TYPE",
+    "MSG_SET_NAME_NACK_TYPE",
+    "MSG_SERVER",
+    "MSG_CONN_ESTABLISH_REQ",
+    "MSG_CONN_ESTABLISH_ACK",
+    "MSG_GET_CLIENT_LIST_TYPE",
+
+    "MSG_CONNECT_TO_CLIENT",
+    "MSG_CONNECTION_REQ_RX",
+    "MSG_CLIENT_BUSY",
+    "MSG_CLIENT_FREE",
+    "MSG_CLIENT_ACCEPT_CONNECTION",
+	"MSG_CLIENT_DECLINE_CONNECTION",
+	"MSG_CLIENT_DECLINE_CONNECTION_ACK",
+    "MSG_CLIENT_NOT_EXIST",
+    "MSG_ATTEMPT_TO_CONNECT_TO_SELF",
+	"MSG_CLIENT_STATUS_REQ_PENDING",
+	"MSG_CLIENT_ACCEPT_CONNECTION_ACK",
+	"MSG_CLIENT_NO_MORE_FREE",
+	"MSG_CLIENT_NO_MORE_EXIST",
+	"MSG_CLIENT_TERMINATION",
+	"MSG_CLIENT_DISCONNECTED",
+	"MSG_CLIENT_CHAT_READY",
+	"MSG_CLIENT_CHANGE_CONN_FD_REQ"
+};
+
 int server_fd = INVALID_FD;
 struct sockaddr_in address;
 int addrlen = sizeof(address);
@@ -31,25 +67,30 @@ void handle_conn_accept(int fd, msg_t msg);
 void handle_tx_msg(int fd, msg_t msg);
 void handle_decline_conn_request(int fd);
 void handle_change_conn_fd_req(int fd, msg_t msg);
-
 /**************************/
+
+const char *msgTypeToStr(msg_type_t type)
+{
+	if(type >= MSG_TYPE_MAX) return msgTypeStr[0];
+	return msgTypeStr[type+1];
+}
 
 void sig_int_handler(int sig)
 {
     if(SIGINT==sig)
     {
-        printf("Server termination signal by user.\n");
+        LOGI("Server termination signal by user.");
         server_terminate = true;
     }
 }
 
 void print_bin_info(void)
 {
-    printf("*******************************\n");
+    printf("*********************************************\n");
     printf("Owner             : %s \n",OWNER);
     printf("Server build date : %s \n",BUILD_DATE );
     printf("Server build time : %s \n",BUILD_TIME );
-    printf("*******************************\n\n");
+    printf("*********************************************\n\n");
 }
 
 srv_err_type init_srv(void)
@@ -64,7 +105,7 @@ srv_err_type init_srv(void)
 
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if(INVALID_FD==server_fd){
-        printf("[ socket ] failed, err : %s, err_no : %d\n",strerror(errno),errno);
+        LOGE(" Failed to get socket for server.");
         return ERR_LIB_INIT;
     }
 
@@ -78,21 +119,21 @@ srv_err_type init_srv(void)
 
     ret=bind(server_fd, (struct sockaddr*)&address, sizeof(address));
     if(-1==ret){
-        printf("[ bind ] failed, err : %s, err_no : %d\n",strerror(errno),errno);
+        LOGE("[ bind ] failed.");
         return ERR_LIB_INIT;
     }
 
     ret=listen(server_fd, MAX_LISTEN);
     if(-1==ret){
-        printf("[ listen ] failed, err : %s, err_no : %d\n",strerror(errno),errno);
+        LOGE("[ listen ] failed.");
         return ERR_LIB_INIT;
     }
 
     if (pthread_mutex_init(&client_data_mutex, NULL) != 0) {
-        printf("[ server ] accepted idex mutex init failed\n");
+        LOGE("[ server ] client_data_mutex init failed.");
         return ERR_LIB_INIT;
     }
-
+    LOGI("Server init done.");
     return SERVER_SUCC;
 }
 
@@ -102,40 +143,39 @@ srv_err_type wait_for_client_conn_and_accept(void)
     fd_set rfds;
     while(!server_terminate)
     {
+        LOGI("Waiting for client connection.");
         int socket_fd = accept(server_fd, (struct sockaddr*)&address, (socklen_t*)&addrlen);
         if(-1==socket_fd)
         {
             if(errno == EINTR && server_terminate)
             {
-                printf("Server termination signal received, terminating server.\n");
+                LOGI("Server termination signal received, terminating server.");
                 break;
             }
-            printf("[ accept ] failed, err : %s, err_no : %d\n",strerror(errno),errno);
+            LOGE("[ accept ] failed.");
         }
         else
         {
             int* new_socket = malloc(sizeof(int));
             if (!new_socket)
             {
-                printf("malloc failed to allocate memory for new_socket\n");
+                LOGE("malloc failed to allocate memory for new_socket.");
                 sleep(1);
                 continue;
             }    
             *new_socket = socket_fd;
-            printf("[ server ] new client connection , fd : %d\n",*new_socket);
+            LOGI("new client connection , fd : %d.",*new_socket);
             if(pthread_create(&thread_id,
                               NULL,
                               client_thread,
                               new_socket)
             )
             {
-                printf("[ pthread_create ] failed, err : %s, err_no : %d\n",strerror(errno),errno);
+                LOGE("[ pthread_create ] failed.");
                 return ERR_THREAD_CREATE;
             }
-            // pthread_detach(thread_id);
         }
     }
-    // printf("Server terminating.\n");
     join_all_client_threads();
     free_all_client_nodes();
     return SERVER_TERMINATE_DETECTED;
@@ -147,28 +187,31 @@ srv_err_type send_conn_establish_msg(int fd)
     srv_err_type ret_val = ERR_CONN_EST;
     sprintf(send_msg.msg_data.buffer,SERVER_UNIQUEUE_ID);
     send_msg.msg_type=MSG_CONN_ESTABLISH_REQ;
-    int size = send(fd,&send_msg,sizeof(send_msg),0);
-    if(size!=sizeof(send_msg) || (-1==size)) 
+    
+    if(SERVER_SUCC!=send_msg_to_fd(fd,send_msg)) 
     {
-        printf("Error in sending conn. establishment msg: %d\n",fd);
+        LOGE("Error in sending conn. establishment msg: %d.",fd);
     }
     else
     {
-        printf("Connection etablish msg sent successfully : %d\n",fd);
+        LOGI("Connection etablish msg sent successfully to fd : %d.",fd);
 
         memset(&send_msg,0,sizeof(send_msg));
-        size = recv(fd,&send_msg,sizeof(send_msg),0);
-        printf(" fd : %d send_msg size = %ld, ACK size recv : %d\n",fd,sizeof(send_msg),size);
+        int size = recv(fd,&send_msg,sizeof(send_msg),0);
         if(size!=sizeof(send_msg))
         {
-            printf("Connection establish ack recv. error\n");
+            LOGE("Connection establish ack recv. error.");
         }
         else
         {
-            if(MSG_CONN_ESTABLISH_ACK==send_msg.msg_type) ret_val = SERVER_SUCC;
+            LOGI("msg received successfully from, fd : %d, msg_type : %s.",fd, msgTypeToStr(send_msg.msg_type));
+            if(MSG_CONN_ESTABLISH_ACK==send_msg.msg_type) 
+            {
+                ret_val = SERVER_SUCC;
+                LOGI("Connection verified with client with fd : %d.",fd);
+            }
         }
     }
-
     return ret_val;
 }
 
@@ -176,23 +219,24 @@ void* client_thread(void* arg)
 {
     int my_socket = *(int*)arg;
     free(arg);
-    pthread_mutex_lock(&client_data_mutex);
+    LOGD("Client thread with fd : %d.",my_socket);
+
+    LOCK_CLIENT_DATA_MUTEX();
     srv_queue_err_type_t ret_val = add_client_node_to_queue(&my_socket);
     if(ret_val!=SERVER_QUEUE_SUCC)
     {
-        printf("Adding client node failed : %s\n",queueErrToStr(ret_val));
-        pthread_mutex_unlock(&client_data_mutex);
+        LOGE("Adding client node failed : %s.",queueErrToStr(ret_val));
+        UNLOCK_CLIENT_DATA_MUTEX();
         return NULL;
     }
-    pthread_mutex_unlock(&client_data_mutex);
-
-    printf("my thread id : %lu .\n",pthread_self());
+    UNLOCK_CLIENT_DATA_MUTEX();
 
     if(SERVER_SUCC != send_conn_establish_msg(my_socket))
     {
-        printf("Terminating thread as, connection cannot be established :%d \n",my_socket);
+        LOGE("Terminating thread as, connection cannot be established :%d.",my_socket);
         return NULL;
     }
+
     while(!server_terminate)
     {
         msg_t rx_msg={0};
@@ -203,13 +247,13 @@ void* client_thread(void* arg)
         } 
         else if(ret == ERR_CLIENT_CLOSED_CONN)
         {
-            pthread_mutex_lock(&client_data_mutex);
+            LOCK_CLIENT_DATA_MUTEX();
             int conn_fd = get_conn_fd_by_fd(my_socket);
             if( INVALID_FD != conn_fd)
             {
                 if( CHAT_STATUS_FREE != get_client_chatting_status_by_fd(conn_fd) )
                 {
-                    printf("chat status of fd : %d, to CHAT_STATUS_FREE. and  to_fd to INVALIDE_FD.\n",conn_fd);
+                    LOGI("chat status of fd : %d, to CHAT_STATUS_FREE. and  to_fd to INVALID_FD.",conn_fd);
                     set_client_chatting_status_by_fd(conn_fd,CHAT_STATUS_FREE);
                     set_to_fd_by_fd(my_socket,INVALID_FD);
                     
@@ -220,11 +264,11 @@ void* client_thread(void* arg)
                 }
             }
             srv_queue_err_type_t qret = remove_client_node_from_queue_by_fd(my_socket);
-            pthread_mutex_unlock(&client_data_mutex);
+            UNLOCK_CLIENT_DATA_MUTEX();
 
             if(SERVER_QUEUE_SUCC != qret)
             {
-                printf("[ %s ] Error in removing queue from list. err : %s\n",__FUNCTION__,queueErrToStr(qret));
+                LOGE("Error in removing queue from list. err : %s.",queueErrToStr(qret));
             }
             break;
         }
@@ -233,52 +277,43 @@ void* client_thread(void* arg)
             sleep(1);
         }
     }
-    printf("Exiting thread with fd : %d.\n",my_socket);
+    LOGD("[ %lu ] Exiting thread.",pthread_self());
     pthread_exit(NULL);
 }
 
 void set_name_handler(int fd,msg_t msg)
 {
-    printf("Name change request to : %s\n",msg.msg_data.buffer);
-    pthread_mutex_lock(&client_data_mutex);
+    LOGD("client with fd : %d has Name change request to : %s.",fd,msg.msg_data.buffer);
+    LOCK_CLIENT_DATA_MUTEX();
 
     name_find_type_t ret = check_client_with_same_name_exist_or_not(msg.msg_data.buffer);
 
     if(ret!=NAME_NOT_EXIST)
     {
-        pthread_mutex_unlock(&client_data_mutex);
+        UNLOCK_CLIENT_DATA_MUTEX();
 
-        printf("[ %s ] Name already exist, or error while finding. err : %d \n",__FUNCTION__,ret);
+        LOGE("Name already exist, or error while finding. err : %d.",ret);
         memset(&msg,0,sizeof(msg));
         msg.msg_type=MSG_SET_NAME_NACK_TYPE;
-    
-        int send_bytes = send(fd,&msg,sizeof(msg),0);
-        if (send_bytes == -1 || send_bytes != sizeof(msg))
-        {
-            printf("Error in send set name failure nack, client fd :%d\n",fd);
-        }
+        send_msg_to_fd(fd,msg);
         return;
     }
 
     srv_queue_err_type_t ret_val = set_name_of_client_by_client_fd(fd,msg.msg_data.buffer);
     if(ret_val != SERVER_QUEUE_SUCC)
     {
-        printf("Error in settig name of client id : %d, err : %s\n",fd,queueErrToStr(ret_val));
-        pthread_mutex_unlock(&client_data_mutex);
+        LOGE("Error in settig name of client with fd : %d, err : %s.",fd,queueErrToStr(ret_val));
+        UNLOCK_CLIENT_DATA_MUTEX();
         return;
     }
 
-    printf("Name changed of client with fd :%d to %s \n",fd,msg.msg_data.buffer);
-    pthread_mutex_unlock(&client_data_mutex);
+    LOGI("Name changed of client with fd :%d to %s.",fd,msg.msg_data.buffer);
+    UNLOCK_CLIENT_DATA_MUTEX();
 
     memset(&msg,0,sizeof(msg));
     msg.msg_type=MSG_SET_NAME_ACK_TYPE;
-
-    int send_bytes = send(fd,&msg,sizeof(msg),0);
-    if (send_bytes == -1 || send_bytes != sizeof(msg))
-    {
-        printf("Error in send set name success ack, client fd :%d\n",fd);
-    }
+    send_msg_to_fd(fd,msg);
+    return;
 }
 
 void send_client_list_handler(int fd)
@@ -289,11 +324,10 @@ void send_client_list_handler(int fd)
 
     srv_queue_err_type_t err = get_client_list(client_list.msg_data.buffer);
 
-    printf("client list : %s \n",client_list.msg_data.buffer);
-    printf("Got sock fd : %d \n",fd);
+    LOGI("client list : %s .",client_list.msg_data.buffer);
     if(INVALID_FD==fd)
     {
-        printf("[ %s ] Invalid sock fd get.\n",__FUNCTION__);
+        LOGE("Invalid sock fd get.");
     }
     else
     {
@@ -340,29 +374,28 @@ void handle_change_conn_fd_req(int fd, msg_t msg)
 {
     if(INVALID_FD==fd)
     {
-        printf("[ %s ] Invalid fd found.\n",__FUNCTION__);
+        LOGE("Invalid fd found.");
         return;
     }
-
 }
 
 void handle_decline_conn_request(int fd)
 {
     if(INVALID_FD==fd)
     {
-        printf("[ %s ] Invalid fd found.\n",__FUNCTION__);
+        LOGE("fd : %d,Invalid fd found.",fd);
         return;
     }
-    pthread_mutex_lock(&client_data_mutex);
+    LOCK_CLIENT_DATA_MUTEX();
     if(CHAT_STATUS_REQ_PENDING==get_client_chatting_status_by_fd(fd))
     {
         int conn_fd = get_conn_fd_by_fd(fd);
         char* my_name = get_client_name_by_fd(fd);
-        pthread_mutex_unlock(&client_data_mutex);
+        UNLOCK_CLIENT_DATA_MUTEX();
 
         if(INVALID_FD==conn_fd)
         {
-            printf("[ %s ] Invalid fd found.\n",__FUNCTION__);
+            LOGE("fd : %d,Invalid fd found.",fd);
             return;
         }
         msg_t decline_resp_msg ={0};
@@ -370,24 +403,25 @@ void handle_decline_conn_request(int fd)
         strcpy(decline_resp_msg.msg_data.buffer,my_name);
         send_msg_to_fd(conn_fd,decline_resp_msg);
 
-        pthread_mutex_lock(&client_data_mutex);
+        LOCK_CLIENT_DATA_MUTEX();
         set_client_chatting_status_by_fd(fd,CHAT_STATUS_FREE);
-        pthread_mutex_unlock(&client_data_mutex);
+        UNLOCK_CLIENT_DATA_MUTEX();
     }
     else
     {
-        pthread_mutex_unlock(&client_data_mutex);
-        printf("chat status is not CHAT_STATUS_REQ_PENDING , and got decline msg.\n");
+        UNLOCK_CLIENT_DATA_MUTEX();
+        LOGI("fd : %d, chat status is not CHAT_STATUS_REQ_PENDING , and got decline msg.",fd);
     }
 }
 
 void handle_tx_msg(int fd, msg_t msg)
 {
-    pthread_mutex_lock(&client_data_mutex);
+    LOGD("fd : %d.",fd);
+    LOCK_CLIENT_DATA_MUTEX();
     if(CHAT_STATUS_BUSY==get_client_chatting_status_by_fd(fd))
     {
         int conn_fd = get_conn_fd_by_fd(fd);
-        pthread_mutex_unlock(&client_data_mutex);
+        UNLOCK_CLIENT_DATA_MUTEX();
         if(0==strcmp(msg.msg_data.buffer,DISCONNECT_CMD))
         {
             if(INVALID_FD!=conn_fd)
@@ -395,18 +429,18 @@ void handle_tx_msg(int fd, msg_t msg)
                 msg_t disconnected_msg={0};
                 disconnected_msg.msg_type = MSG_CLIENT_DISCONNECTED;
 
-                pthread_mutex_lock(&client_data_mutex);
+                LOCK_CLIENT_DATA_MUTEX();
                 strcpy(disconnected_msg.msg_data.buffer,get_client_name_by_fd(fd));
                 set_client_chatting_status_by_fd(fd,CHAT_STATUS_FREE);
                 set_client_chatting_status_by_fd(conn_fd,CHAT_STATUS_FREE);
                 set_to_fd_by_fd(fd,INVALID_FD);
                 set_to_fd_by_fd(conn_fd,INVALID_FD);
-                pthread_mutex_unlock(&client_data_mutex);
+                UNLOCK_CLIENT_DATA_MUTEX();
                 send_msg_to_fd(conn_fd,disconnected_msg);
             }
             else
             {
-                printf("[1] [ %s ] Invalid fd found.\n",__FUNCTION__);
+                LOGE("fd : %d,Invalid fd found.",fd);
             }
         }
         else
@@ -414,24 +448,24 @@ void handle_tx_msg(int fd, msg_t msg)
             if(INVALID_FD!=conn_fd)
             {
                 msg.msg_type=MSG_CLIENT_RX_TYPE;
-                printf("sending msg to : %d from %d.\n",conn_fd,fd);
+                LOGI("sending msg to : %d from %d.",conn_fd,fd);
                 send_msg_to_fd(conn_fd,msg);
             }
             else
             {
-                printf("[2] [ %s ] Invalid fd found.\n",__FUNCTION__);
+                LOGE("fd : %d,Invalid fd found.",fd);
             }
         }
     }
     else
     {
-        pthread_mutex_unlock(&client_data_mutex);
+        UNLOCK_CLIENT_DATA_MUTEX();
     }
 }
 
 srv_err_type wait_to_recv_something(int fd, msg_t* rx_msg)
 {
-    // printf("[ %s ] inside this function.\n",__FUNCTION__);
+    // LOGD("fd :%d.",fd);
     if(!rx_msg) return ERR_NULL_PTR;
 
     struct pollfd fds[2];
@@ -444,15 +478,15 @@ srv_err_type wait_to_recv_something(int fd, msg_t* rx_msg)
     {
         if (EINTR == errno ) 
         {
-            printf("Poll interrupted by signal.\n");
+            LOGE("fd : %d,Poll interrupted by signal.",fd);
             return ERR_CLIENT_CLOSED_CONN;
         }
-        printf("[ %s ] Error in poll.\n",__FUNCTION__);
+        LOGE("fd : %d,Error in poll.",fd);
         return ERR_CLIENT_CLOSED_CONN;
     }
     else if(ret==0)
     {
-        // printf("[ %s ] Poll timeout.\n",__FUNCTION__);
+        // LOGI("fd : %d, Poll timeout.",fd);
         return ERR_READ_TIMEOUT;
     }
 
@@ -461,16 +495,17 @@ srv_err_type wait_to_recv_something(int fd, msg_t* rx_msg)
         int bytes = recv(fd, rx_msg, sizeof(*rx_msg), 0);
         if (bytes > 0)
         {
+            LOGI("msg received successfully from, fd : %d, msg_type : %s.",fd,msgTypeToStr(rx_msg->msg_type));
             return SERVER_SUCC;
         }
         else if (bytes == 0)
         {
-            printf("Client termination detected fd : [ %d ].\n",fd);
+            LOGI("Client termination detected fd : [ %d ].",fd);
             return ERR_CLIENT_CLOSED_CONN;
         }
         else
         {
-            printf("[ %s ] error in receive from client fd : %d .\n",__FUNCTION__,fd);;
+            LOGE("error in receive from client fd : %d .",fd);;
             return ERR_RECV;
         }
     }
@@ -479,13 +514,14 @@ srv_err_type wait_to_recv_something(int fd, msg_t* rx_msg)
 
 srv_err_type send_msg_to_fd(int fd,msg_t send_msg)
 {
+    LOGD("");
     int size = send(fd,&send_msg,sizeof(send_msg),0);
     if(size!=sizeof(send_msg) || (-1==size)) 
     {
-        printf("Error in sending msg to fd : %d\n",fd);
+        LOGE("Error in sending msg to fd : %d.",fd);
         return ERR_MSG_SEND;
     }
-    printf("msg sent successfully , %d\n",fd);
+    LOGI("msg sent successfully to fd : %d msg_type : %s.",fd,msgTypeToStr(send_msg.msg_type));
 
     return SERVER_SUCC;
 
@@ -493,18 +529,17 @@ srv_err_type send_msg_to_fd(int fd,msg_t send_msg)
 
 void handle_chat_connection_request(int fd,char* conn_client_name)
 {
-    printf("[ %s ] inside this.\n",__FUNCTION__);
+    LOGD("fd :%d.",fd);
     if( (INVALID_FD==fd) || (!conn_client_name)) 
     {
-        printf("Invalid fd or null client conn name found.\n");
+        LOGE("fd : %d, Invalid fd or null client conn name found.",fd);
         return;
     }
 
-    printf("my fd : %d.\n",fd);
     msg_t conn_resp_msg={0};
     msg_t conn_req_send_msg={0};
     memcpy(conn_resp_msg.msg_data.buffer,conn_client_name,MAX_CLIENT_NAME_LEN);
-    pthread_mutex_lock(&client_data_mutex);
+    LOCK_CLIENT_DATA_MUTEX();
     name_find_type_t ret = check_client_with_same_name_exist_or_not(conn_client_name);
 
     if(ret==NAME_EXISTS)
@@ -512,46 +547,43 @@ void handle_chat_connection_request(int fd,char* conn_client_name)
         char *my_name = get_client_name_by_fd(fd);
         if(!strcmp(my_name,conn_client_name))
         {
-            pthread_mutex_unlock(&client_data_mutex);
-            printf("[ %s ] tries to connect with itself !!!\n",conn_client_name);
+            UNLOCK_CLIENT_DATA_MUTEX();
+            LOGI("[ %s ] tries to connect with itself !!!",conn_client_name);
             conn_resp_msg.msg_type=MSG_ATTEMPT_TO_CONNECT_TO_SELF;
         }
         else
         {
             client_chat_status_t chat_status = get_client_chatting_status_by_name(conn_client_name);
-            pthread_mutex_unlock(&client_data_mutex);
+            UNLOCK_CLIENT_DATA_MUTEX();
     
             if(chat_status == CHAT_STATUS_CLIENT_NOT_FOUND)
             {
-                printf("[ 1 ]client not found with name : %s.\n",conn_client_name);
+                LOGI("fd : %d, client not found with name : %s.",fd,conn_client_name);
                 conn_resp_msg.msg_type=MSG_CLIENT_NOT_EXIST;
             }
             else
             {
-                printf("Client with name %s exist. chat_status : %s\n",conn_client_name,chat_status_to_str(chat_status));
+                LOGI("fd : %d, Client with name %s exist. chat_status : %s.",fd,conn_client_name,chat_status_to_str(chat_status));
                 if(CHAT_STATUS_FREE == chat_status)
                 {
                     conn_resp_msg.msg_type=MSG_CLIENT_FREE;
-                    pthread_mutex_lock(&client_data_mutex);
+                    LOCK_CLIENT_DATA_MUTEX();
                     int conn_client_fd = get_client_fd_by_name(conn_client_name);
-                    printf("[ 1 ] my_fd : %d, conn fd : %d.\n",fd,conn_client_fd);
                     set_client_chatting_status_by_fd(conn_client_fd,CHAT_STATUS_REQ_PENDING);
-                    pthread_mutex_unlock(&client_data_mutex);
+                    UNLOCK_CLIENT_DATA_MUTEX();
                     if(INVALID_FD==conn_client_fd)
                     {
-                        printf("[ %s ] Invalid fd got.\n",__FUNCTION__);
+                        LOGE("fd : %d, Invalid fd got.",fd);
                         conn_resp_msg.msg_type=MSG_CLIENT_NOT_EXIST;
                     }
                     else
                     {
                         //sending conn request to client required.
-                        pthread_mutex_lock(&client_data_mutex);
-                        printf("[ 2 ] my_fd : %d, conn fd : %d.\n",fd,conn_client_fd);
-
+                        LOCK_CLIENT_DATA_MUTEX();
                         set_to_fd_by_fd(fd,conn_client_fd);
                         set_to_fd_by_fd(conn_client_fd,fd);
-                        pthread_mutex_unlock(&client_data_mutex);
-                        printf("Sending conn request from [ %s ] : [ %s ] .\n",my_name,conn_client_name);
+                        UNLOCK_CLIENT_DATA_MUTEX();
+                        LOGI("Sending conn request from [ %s ] : [ %s ] .",my_name,conn_client_name);
                         conn_req_send_msg.msg_type=MSG_CONNECTION_REQ_RX;
                         strcpy(conn_req_send_msg.msg_data.buffer,my_name);
                         send_msg_to_fd(conn_client_fd,conn_req_send_msg);
@@ -559,15 +591,17 @@ void handle_chat_connection_request(int fd,char* conn_client_name)
                 }
                 else if (CHAT_STATUS_BUSY == chat_status)
                 {
+                    LOGI("fd : %d, conn_client is busy.",fd);
                     conn_resp_msg.msg_type=MSG_CLIENT_BUSY;                    
                 }
                 else if(CHAT_STATUS_REQ_PENDING == chat_status)
                 {
+                    LOGI("fd : %d, conn_client has pending connectoin request.",fd);
                     conn_resp_msg.msg_type=MSG_CLIENT_STATUS_REQ_PENDING;
                 }
                 else
                 {
-                    printf("[ %s ] Should Never come here.\n",__FUNCTION__);
+                    LOGE("fd : %d,somethig is wrong.",fd);
                     //if came then mark client not found.
                     conn_resp_msg.msg_type=MSG_CLIENT_NOT_EXIST;
                 }
@@ -576,28 +610,24 @@ void handle_chat_connection_request(int fd,char* conn_client_name)
     }
     else
     {
-        pthread_mutex_unlock(&client_data_mutex);
-        printf("[ 2 ]client not found with name : %s.\n",conn_client_name);
+        UNLOCK_CLIENT_DATA_MUTEX();
+        LOGE("fd : %d,client not found with name : %s.",fd,conn_client_name);
         conn_resp_msg.msg_type=MSG_CLIENT_NOT_EXIST;
     }
 
-    int send_bytes = send(fd,&conn_resp_msg,sizeof(conn_resp_msg),0);
-    if (send_bytes == -1 || send_bytes != sizeof(conn_resp_msg))
-    {
-        printf("Error in sending ack for conn req to, client fd :%d\n",fd);
-    }
+    send_msg_to_fd(fd,conn_resp_msg);
 }
 
 void handle_conn_accept(int fd, msg_t msg)
 {
-    printf("[ fd :%d, %s ] Inside this fn.\n",fd,__FUNCTION__);
-    pthread_mutex_lock(&client_data_mutex);
+    LOGD("fd : %d, Inside this fn.",fd);
+    LOCK_CLIENT_DATA_MUTEX();
     client_chat_status_t my_chat_status = get_client_chatting_status_by_fd(fd);
-    printf("chatting status of %d is %s.\n",fd,chat_status_to_str(my_chat_status));
+    LOGI("chatting status of %d is %s.",fd,chat_status_to_str(my_chat_status));
     int conn_fd = get_conn_fd_by_fd(fd);
     if(INVALID_FD==conn_fd)
     {
-        printf("[ %s ] Invalid fd got.\n",__FUNCTION__);
+        LOGE("fd : %d,Invalid fd found.",fd);
         return;
     }
     client_chat_status_t conn_client_chat_status = get_client_chatting_status_by_fd(conn_fd);
@@ -607,23 +637,23 @@ void handle_conn_accept(int fd, msg_t msg)
         set_client_chatting_status_by_fd(fd,CHAT_STATUS_FREE);
         set_to_fd_by_fd(fd,INVALID_FD);
     
-        pthread_mutex_unlock(&client_data_mutex);
-        printf("Client with fd : %d, no more exist.\n",conn_fd);
+        UNLOCK_CLIENT_DATA_MUTEX();
+        LOGI("fd : %d,Client with fd : %d, no more exist.",fd,conn_fd);
         msg_t client_not_exit_msg={0};
         strcpy(client_not_exit_msg.msg_data.buffer,"Client_not_exist");
         client_not_exit_msg.msg_type= MSG_CLIENT_NO_MORE_EXIST;
         send_msg_to_fd(fd,client_not_exit_msg);
         return;
     }
-    printf("%d connects to %s.\n",fd,conn_client_name);
-    pthread_mutex_unlock(&client_data_mutex);
-    printf("conn_cliennt_chat status : %s.\n",chat_status_to_str(conn_client_chat_status));
+    LOGI("%d connects to %s.",fd,conn_client_name);
+    UNLOCK_CLIENT_DATA_MUTEX();
+    LOGI("conn_cliennt_chat status : %s.",chat_status_to_str(conn_client_chat_status));
     if(CHAT_STATUS_BUSY == conn_client_chat_status)
     {
-        printf("[ %d ] is no more free.\n",conn_fd);
-        pthread_mutex_lock(&client_data_mutex);
+        LOGI("fd: %d, [ %d ] is no more free.",fd,conn_fd);
+        LOCK_CLIENT_DATA_MUTEX();
         set_client_chatting_status_by_fd(fd,CHAT_STATUS_FREE);
-        pthread_mutex_unlock(&client_data_mutex);
+        UNLOCK_CLIENT_DATA_MUTEX();
         msg_t nack_resp_msg={0};
         strcpy(nack_resp_msg.msg_data.buffer,conn_client_name);
         nack_resp_msg.msg_type= MSG_CLIENT_NO_MORE_FREE;
@@ -633,7 +663,7 @@ void handle_conn_accept(int fd, msg_t msg)
 
     if(CHAT_STATUS_REQ_PENDING!=my_chat_status)
     {
-        printf("[ fd:%d ] There is no current pending request. Ignoring accept request.\n",fd);
+        LOGI("fd : %d, There is no current pending request. Ignoring accept request.",fd);
         msg_t accept_ign_msg={0};
         strcpy(accept_ign_msg.msg_data.buffer,"SOMETHING_IS_WRONG");
         accept_ign_msg.msg_type= MSG_CLIENT_ACCEPT_CONNECTION_ACK;
@@ -644,7 +674,7 @@ void handle_conn_accept(int fd, msg_t msg)
     {
         msg_t accept_respt_msg={0};
 
-        pthread_mutex_lock(&client_data_mutex);
+        LOCK_CLIENT_DATA_MUTEX();
         set_client_chatting_status_by_fd(fd,CHAT_STATUS_BUSY);
         set_client_chatting_status_by_fd(conn_fd,CHAT_STATUS_BUSY);
 
@@ -653,11 +683,11 @@ void handle_conn_accept(int fd, msg_t msg)
 
         char *conn_name = get_client_name_by_fd(conn_fd);
         char *my_name   = get_client_name_by_fd(fd);
-        pthread_mutex_unlock(&client_data_mutex);
+        UNLOCK_CLIENT_DATA_MUTEX();
 
         if((0==strcmp(conn_name,UNDEF_NAME)) || (0==strcmp(my_name,UNDEF_NAME)))
         {
-            printf("[ %s ] Undef name found.\n",__FUNCTION__);
+            LOGE("fd : %d, Undef name found.",fd);
             return;
         }
 

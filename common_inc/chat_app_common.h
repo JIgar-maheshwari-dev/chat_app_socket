@@ -16,7 +16,6 @@
 #define UNDEF_NAME          "NAME_NOT_DEFINED"
 #define DISCONNECT_CMD       "disconnect"
 
-
 typedef enum{
     MSG_CLIENT_RX_TYPE=0,
     MSG_CLIENT_TX_TYPE,

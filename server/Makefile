@@ -1,6 +1,6 @@
 CC = gcc
 AR = ar
-CFLAGS = -Ilib_src -I../ -O0 -g
+CFLAGS = -Ilib_src -I../common_inc/ -Iinc/ -O0 -g
 LIB_SRC_DIR = lib_src
 LIB_DIR = lib
 #BIN_DIR = bin

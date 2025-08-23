@@ -10,6 +10,7 @@
 #include <sys/select.h>
 #include <poll.h>
 #include <signal.h>
+#include "logger.h"
 #include "client_lib.h"
 #include "chat_app_common.h"
 
@@ -19,7 +20,6 @@
 client_err_type_t recv_with_timeout(int sock, void *buf, size_t len, int timeout_sec);
 pthread_t io_thread_id;
 
-// client_err_type_t (*rx_msg_handle_cb)(msg_t rx_msg) = NULL;
 int sock = INVALID_FD;
 lib_params_t *cb_parameters=NULL;
 bool conn_request_rx       = false;
@@ -74,34 +74,37 @@ void handle_rx_msg_lib(int sock,msg_t rx_msg);
 
 void print_bin_info(void)
 {
-    printf("*******************************\n");
+    printf("*********************************************\n");
     printf("Owner             : %s \n",OWNER);
     printf("Cleint build date : %s \n",BUILD_DATE );
     printf("Cleint build time : %s \n",BUILD_TIME );
-    printf("*******************************\n\n");
+    printf("*********************************************\n\n");
 }
 
 void sig_int_handler(int sig)
 {
+	LOGI("Client termination signal received.");
 	if(sig==SIGINT)
 	{
-		printf("Client termination signal received.\n");
 		if(NULL==cb_parameters)
 		{
-			printf("cb_params not set yet.\n");
+			LOGI("cb_params are null.");
 			return;
 		}
 		else
 		{
 			*(cb_parameters->client_shut_down_flag) = true;
+			LOGI("Set client_shut_down_flag.");
 		}
 	}
 }
 
 client_err_type_t check_lib_params(void)
 {
+	LOGD("");
 	if(!cb_parameters)
 	{
+		LOGE("Null callback params found.");
 		return CLIENT_ERR_NULL_PTR;
 	}
 	else if( (!cb_parameters->client_shut_down_flag) || 
@@ -110,19 +113,21 @@ client_err_type_t check_lib_params(void)
 			 (!cb_parameters->busy_in_chat)
 			)
 	{
+		LOGE("Any of cb_param is null.");
 		return CLIENT_ERR_NULL_PTR;
 	}
+	LOGI("cb_params set successfully.");
 	return CLIENT_SUCCESS;
 }
 
 client_err_type_t connect_to_server(void)
 {
+	LOGD("");
 	print_bin_info();
     struct sockaddr_in serv_addr;
 
 	if(CLIENT_SUCCESS!=check_lib_params())
 	{
-		printf("Lib cb params not set yet.\n");
 		return CLIENT_CB_PARAMS_NOT_SET;
 	}
 
@@ -132,8 +137,8 @@ client_err_type_t connect_to_server(void)
     sa.sa_flags = 0;          
     sigaction(SIGINT, &sa, NULL);
 
-
     sock = socket(AF_INET, SOCK_STREAM, 0);
+	LOGI("Got socket.");
 
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(SERVER_PORT);
@@ -141,25 +146,24 @@ client_err_type_t connect_to_server(void)
 
     if(connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)))
 	{
-		printf("[ connect ] failed, err : %s, errno : %d\n",strerror(errno),errno);
+		LOGE("[ connect ] failed.");
 		return CONNECTION_FAILED;
 	}
-    printf("Connected to server.\n");
+    LOGI("Connected to server.");
 
 	msg_t temp_msg={0};
 	client_err_type_t err = recv_with_timeout(sock,&temp_msg,sizeof(temp_msg),5);
-	// printf("err : %d , server_key : %s , msg_type : %d\n",err,temp_msg.msg_data.buffer, temp_msg.msg_type);
 
 	if(CLIENT_SUCCESS != err )
 	{
-		printf("Connection verification failed.\n");
+		LOGE("Connection verification failed.");
 		return CONNECTION_FAILED;
 	}
 	else
 	{
 		if( (MSG_CONN_ESTABLISH_REQ==temp_msg.msg_type) && (0==strcmp(temp_msg.msg_data.buffer,SERVER_UNIQUEUE_ID) ))
 		{
-			printf("Connection verified successfully\n");
+			LOGI("Connection verified successfully.");
 			msg_t send_node={0};
 			send_node.msg_type=MSG_CONN_ESTABLISH_ACK;
 			client_err_type_t err = send_msg_to_server(send_node);
@@ -167,7 +171,7 @@ client_err_type_t connect_to_server(void)
 		}
 		else
 		{
-			printf("Server key mismatched.\n");
+			LOGE("Server key mismatched.");
 			return CONNECTION_FAILED;
 		}
 	}
@@ -176,9 +180,10 @@ client_err_type_t connect_to_server(void)
 
 void set_my_name(char *name_to_set)
 {
+	LOGD("");
 	if(NULL==name_to_set)
 	{
-		printf("[ %s ] Null ptr found\n",__FUNCTION__);
+		LOGE("Null ptr found");
 		return;
 	}
 
@@ -188,27 +193,33 @@ void set_my_name(char *name_to_set)
 	send_msg.msg_type = MSG_SET_NAME_REQ_TYPE;
 	client_err_type_t ret = send_msg_to_server(send_msg);
 	if(CLIENT_SUCCESS!=ret)
-		printf("set-name msg send : failed\n");
+		LOGE("set-name msg send : failed.");
 	else
-		printf("set-name msg send : success,name : %s\n",name_to_set);
+		LOGD("set-name msg send : success,name : %s.",name_to_set);
 }
 
 client_err_type_t send_msg_to_server(msg_t msg_to_send)
 {
-	if(sock==INVALID_FD) return CLIENT_NOT_CONNECTED;
+	LOGD("");
+	if(sock==INVALID_FD)
+	{
+		LOGE("cliet is not connected to server.");
+		return CLIENT_NOT_CONNECTED;
+	}
 
 	int ret = send(sock,&msg_to_send,sizeof(msg_to_send),0);
 	if( (sizeof(msg_to_send)!=ret) || (-1==ret))
 	{
-		printf("Error in sending msg to server\n");
+		LOGE("Error in sending msg to server.");
 		return CLIENT_MSG_SEND_ERR;
 	}
-	printf("msg send to server successfuly\n");
+	LOGI("msg send to server successfuly.");
 	return CLIENT_SUCCESS;
 }
 
 void* io_thread(void* arg)
 {
+	LOGD("");
     struct pollfd fds[2];
     fds[0].fd = sock;
     fds[0].events = POLLIN;
@@ -225,15 +236,15 @@ void* io_thread(void* arg)
         if (ret < 0)
         {
 			if (EINTR == errno ) {
-                printf("Poll interrupted by signal\n");
+                LOGD("Poll interrupted by signal.");
                 break;
             }
-            printf("[ %s ] Error in poll.\n",__FUNCTION__);
+            LOGD("Error in poll.");
             break;
         }
 		else if(ret==0)
 		{
-			// printf("[ %s ] Poll timeout.\n",__FUNCTION__);
+			// LOGD("Poll timeout.");
 			continue;
 		}
 
@@ -242,6 +253,7 @@ void* io_thread(void* arg)
             int bytes = recv(sock, &rx_msg, sizeof(rx_msg), 0);
             if (bytes > 0)
             {
+				LOGD("%d bytes received from server.",bytes);
 				if( (NULL!=cb_parameters) && (NULL!=cb_parameters->msg_handle_cb)) 
 				{
 					cb_parameters->msg_handle_cb(rx_msg);
@@ -250,14 +262,15 @@ void* io_thread(void* arg)
 			}
             else if (bytes == 0)
             {
-                printf("Server shut-down detected.\n");
+                LOGI("Server shut-down detected.");
+                LOGI("Setting client/server shutdow flag.");
 				*cb_parameters->server_shut_down_flag = true;
-				*cb_parameters->server_shut_down_flag = true;
+				*cb_parameters->client_shut_down_flag = true;
                 break;
             }
             else
             {
-                printf("[ %s ] error in receive from server.\n",__FUNCTION__);;
+                LOGE("error in receive from server.");;
                 break;
             }
         }
@@ -267,10 +280,9 @@ void* io_thread(void* arg)
 			int bytes = read(STDIN_FILENO, buffer, sizeof(buffer)-1);
             if (bytes > 0)
             {
-				// printf("%d bytes received.\n",bytes);
+				// LOGD("%d bytes received from stdin.",bytes);
 				if((1==bytes) && (buffer[0]=='\n'))
 				{
-					// printf("Hehhe its only new line.\n");
 					continue;
 				}
 
@@ -291,22 +303,23 @@ void* io_thread(void* arg)
 			}
             else if (bytes == 0)
             {
-				printf("0 bytes received in poll of stdin.\n");
+				LOGD("0 bytes received in poll of stdin.");
 				continue;
             }
             else
             {
-                printf("[ %s ] error in receive from STDIN. errno : %d, err: %s\n",__FUNCTION__,errno,strerror(errno));;
+                LOGE("error in receive from STDIN.");
                 break;
             }
 		}
     }
-	printf("Client io_thread is terminating.\n");
+	LOGI("Client io_thread is terminating.");
     return RETVAL(CLIENT_SUCCESS);
 }
 
 void get_client_list(void)
 {
+	LOGD("");
 	msg_t client_list_req_struct={0};
 	client_list_req_struct.msg_type = MSG_GET_CLIENT_LIST_TYPE;
 	send_msg_to_server(client_list_req_struct);
@@ -326,6 +339,7 @@ const char *msgTypeToStr(msg_type_t type)
 
 client_err_type_t recv_with_timeout(int sock, void *buf, size_t len, int timeout_sec)
 {
+	LOGD("");
     fd_set readfds;
     struct timeval tv;
 
@@ -339,39 +353,44 @@ client_err_type_t recv_with_timeout(int sock, void *buf, size_t len, int timeout
 
     if (retval == -1) 
 	{
-        printf("Error in select.\n");
+        LOGE("Error in select.");
         return CLIENT_READ_ERROR;
     }
     else if (retval == 0) 
 	{
-        printf("Timeout waiting for data\n");
+        LOGI("Timeout waiting for data.");
         return CLIENT_READ_TIMEOUT;
     }
     else 
 	{
         int ret = recv(sock, buf, len, 0);
-		// printf("[ %s ] Received, ret : %d,buf->type : %d\n",__FUNCTION__,ret,((msg_t*)buf)->msg_type);
 		return CLIENT_SUCCESS;
     }
 }
 
 void set_lib_params(lib_params_t* params)
 {
-	cb_parameters=params;
+	if(!params)
+		LOGE("NUll lib params found.");
+	else
+	{
+		cb_parameters=params;
+		LOGI("Lib params set successfully.");
+	}
 }
 
 client_err_type_t chat_on(void)
 {
 	if(pthread_create(&io_thread_id,NULL,io_thread,NULL))
 	{
-		printf("Error in creating rx thread\n");
+		LOGE("Error in creating rx thread.");
 		return CLIENT_ERR_THREAD_CREATE;
 	}
 	void* io_thread_ret_val ;
-	printf("joiing io_thread to main thread.\n");
+	LOGI("joiing io_thread to main thread.");
 	
 	pthread_join(io_thread_id,&io_thread_ret_val);
-	printf("io_thread joined to main thread. [ %s ]\n",errTostr(GETVAL(io_thread_ret_val)) );
+	LOGD("io_thread joined to main thread. [ %s ].",errTostr(GETVAL(io_thread_ret_val)) );
 	return GETVAL(io_thread_ret_val);
 }
 
@@ -379,7 +398,7 @@ void connect_with_client(char *name)
 {
 	if(!name) 
 	{
-		printf("[ %s ] Null ptr found.\n",__FUNCTION__);
+		LOGE("Null ptr found.");
 		return;
 	}
 	msg_t conn_req_msg={
@@ -396,26 +415,32 @@ void handle_rx_msg_lib(int sock,msg_t rx_msg)
 	switch(rx_msg.msg_type)
 	{
 		case MSG_CONNECTION_REQ_RX:
+			LOGI("Setting conn_request_rx to true.");
 			conn_request_rx = true;
 			break;
 		
 		case MSG_CLIENT_ACCEPT_CONNECTION_ACK:
 			if(conn_request_rx)
 			{
-				printf("We have connn-request and some-one has requested our conn-request.\n");
+				LOGI("We have connn-request and some-one has accepted our conn-request.");
 			}
+			LOGI("Setting conn_request_rx to false.");
 			conn_request_rx = false;
+			LOGI("Setting busy_in_chat to true.");
 			*(cb_parameters->busy_in_chat)=true;
 			break;
 
 		case MSG_CLIENT_CHAT_READY:
+			LOGI("Setting busy_in_chat to true.");
 			*(cb_parameters->busy_in_chat)=true;
 			break;
 
 		case MSG_CLIENT_NO_MORE_FREE:
 		case MSG_CLIENT_TERMINATION:
 		case MSG_CLIENT_DISCONNECTED:
+			LOGI("Setting conn_request_rx to false.");
 			conn_request_rx = false;
+			LOGI("Setting busy_in_chat to false.");
 			*(cb_parameters->busy_in_chat)=false;
 			break;
 	}

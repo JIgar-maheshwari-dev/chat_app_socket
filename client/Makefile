@@ -1,12 +1,11 @@
 CC = gcc
 AR = ar
-CFLAGS = -Ilib_src -I../ -O0
+CFLAGS = -Ilib_src -I../common_inc/ -Iinc/ -O0
 LIB_SRC_DIR = lib_src
 LIB_DIR = lib
 #BIN_DIR = bin
 
 OWNER := $(shell whoami)
-
 
 LIB_OBJS = $(patsubst $(LIB_SRC_DIR)/%.c, $(LIB_DIR)/%.o, $(wildcard $(LIB_SRC_DIR)/*.c))
 LIB = $(LIB_DIR)/libjclient.a
