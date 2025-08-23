@@ -701,3 +701,10 @@ void handle_conn_accept(int fd, msg_t msg)
         send_msg_to_fd(conn_fd,accept_respt_msg);
     }
 }
+
+char* get_current_time(void) {
+    static char buf[20];
+    time_t now = time(NULL);
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", localtime(&now));
+    return buf;
+}

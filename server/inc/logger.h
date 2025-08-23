@@ -17,25 +17,25 @@
 #define COLOR_BOLD_YELLOW  "\033[1;33m"
 #define COLOR_RESET        "\033[0m"
 
-extern FILE *log_fp;
+char* get_current_time(void);
 
 #if LOG_LEVEL>=LOG_LEVEL_ERROR
-    #define LOGE(fmt, ...) fprintf(stderr, COLOR_BOLD_RED "[ ERROR ] " COLOR_RESET "%s:%d: "  fmt "\n",\
-                            __func__, __LINE__, ##__VA_ARGS__)
+    #define LOGE(fmt, ...) fprintf(stderr, COLOR_BOLD_RED "[ %s ] [ ERROR ] " COLOR_RESET "%s:%d: "  fmt "\n",\
+                            get_current_time(),__func__, __LINE__, ##__VA_ARGS__)
 #else
     #define LOGE(fmt,...)
 #endif
 
 #if LOG_LEVEL>=LOG_LEVEL_INFO
-    #define LOGI(fmt, ...) fprintf(stderr, COLOR_BOLD_GREEN "[ INFO ]  " COLOR_RESET "%s:%d: " fmt "\n",\
-                            __func__, __LINE__, ##__VA_ARGS__)
+    #define LOGI(fmt, ...) fprintf(stderr, COLOR_BOLD_GREEN "[ %s ] [ INFO ]  " COLOR_RESET "%s:%d: " fmt "\n",\
+                            get_current_time(),__func__, __LINE__, ##__VA_ARGS__)
 #else
     #define LOGI(fmt,...)
 #endif
 
 #if LOG_LEVEL>=LOG_LEVEL_DEBUG
-    #define LOGD(fmt, ...) fprintf(stderr, COLOR_BOLD_YELLOW "[ DEBUG ] "COLOR_RESET "%s:%d: " fmt "\n",\
-                            __func__, __LINE__, ##__VA_ARGS__)
+    #define LOGD(fmt, ...) fprintf(stderr, COLOR_BOLD_YELLOW "[ %s ] [ DEBUG ] "COLOR_RESET "%s:%d: " fmt "\n",\
+                            get_current_time(),__func__, __LINE__, ##__VA_ARGS__)
 #else
     #define LOGD(fmt,...)
 #endif

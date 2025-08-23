@@ -452,3 +452,10 @@ void handle_rx_msg_lib(int sock,msg_t rx_msg)
 			break;
 	}
 }
+
+char* get_current_time(void) {
+    static char buf[20];
+    time_t now = time(NULL);
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", localtime(&now));
+    return buf;
+}
