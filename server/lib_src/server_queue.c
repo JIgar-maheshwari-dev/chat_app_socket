@@ -12,7 +12,7 @@ client_node_t* client_list=NULL;
 uint8_t total_available_clients=0;
 
 const char* queueErrStr[]={
-    "UNDEFINED_QUEUE_ERR"
+    "UNDEFINED_QUEUE_ERR",
     "SERVER_QUEUE_SUCC",
     "ERR_NULL_PTR",
     "ERR_MALLOC_FAILED",
@@ -22,7 +22,6 @@ const char* queueErrStr[]={
     "ERR_NODE_NOT_FOUND",
     "ERR_NO_CLIENT_ID_FREE",
     "ERR_NAME_NOT_SET",
-    "ERR_QUEUE_MAX"
 };
 
 const char* chat_status_str[]={
@@ -42,7 +41,7 @@ srv_queue_err_type_t add_client_node_to_queue(int* fd)
         return ERR_NULL_PTR;
     }
 
-    if(total_available_clients>MAX_CLIENT) 
+    if(total_available_clients>=MAX_CLIENT) 
     {
         LOGE("Max client limit reached, cannot connect more client now \
                 [ total_available_clients= %d ] !!!\n",total_available_clients);

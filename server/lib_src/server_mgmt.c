@@ -47,7 +47,8 @@ const char *msgTypeStr[] = {
 	"MSG_CLIENT_TERMINATION",
 	"MSG_CLIENT_DISCONNECTED",
 	"MSG_CLIENT_CHAT_READY",
-	"MSG_CLIENT_CHANGE_CONN_FD_REQ"
+	"MSG_CLIENT_CHANGE_CONN_FD_REQ",
+    "MSG_MAX_CLIENT_REACHED"
 };
 
 int server_fd = INVALID_FD;
@@ -55,6 +56,7 @@ struct sockaddr_in address;
 int addrlen = sizeof(address);
 pthread_mutex_t client_data_mutex;
 bool server_terminate = false;
+extern uint8_t total_available_clients;
 /**************************/
 
 /* FUNCTIONS DECLARATIONS */
@@ -156,23 +158,37 @@ srv_err_type wait_for_client_conn_and_accept(void)
         }
         else
         {
-            int* new_socket = malloc(sizeof(int));
-            if (!new_socket)
+            LOCK_CLIENT_DATA_MUTEX();
+            int temp_client_count = total_available_clients;
+            UNLOCK_CLIENT_DATA_MUTEX();
+            if(temp_client_count<MAX_CLIENT)
             {
-                LOGE("malloc failed to allocate memory for new_socket.");
-                sleep(1);
-                continue;
-            }    
-            *new_socket = socket_fd;
-            LOGI("new client connection , fd : %d.",*new_socket);
-            if(pthread_create(&thread_id,
-                              NULL,
-                              client_thread,
-                              new_socket)
-            )
+                int* new_socket = malloc(sizeof(int));
+                if (!new_socket)
+                {
+                    LOGE("malloc failed to allocate memory for new_socket.");
+                    sleep(1);
+                    continue;
+                }    
+                *new_socket = socket_fd;
+                LOGI("new client connection , fd : %d.",*new_socket);
+                if(pthread_create(&thread_id,
+                                  NULL,
+                                  client_thread,
+                                  new_socket)
+                )
+                {
+                    free(new_socket);
+                    LOGE("[ pthread_create ] failed.");
+                    return ERR_THREAD_CREATE;
+                }    
+            }
+            else
             {
-                LOGE("[ pthread_create ] failed.");
-                return ERR_THREAD_CREATE;
+                LOGE("Max client limit reached !!!. client count : %d.",temp_client_count);
+                msg_t max_client_msg={0};
+                max_client_msg.msg_type=MSG_MAX_CLIENT_REACHED;
+                send_msg_to_fd(socket_fd,max_client_msg);        
             }
         }
     }
@@ -225,7 +241,10 @@ void* client_thread(void* arg)
     srv_queue_err_type_t ret_val = add_client_node_to_queue(&my_socket);
     if(ret_val!=SERVER_QUEUE_SUCC)
     {
-        LOGE("Adding client node failed : %s.",queueErrToStr(ret_val));
+        LOGE("Adding client node failed : %s. err : %d.",queueErrToStr(ret_val),ret_val);
+        msg_t max_client_msg={0};
+        max_client_msg.msg_type=MSG_MAX_CLIENT_REACHED;
+        send_msg_to_fd(my_socket,max_client_msg);
         UNLOCK_CLIENT_DATA_MUTEX();
         return NULL;
     }

@@ -67,7 +67,8 @@ const char *msgTypeStr[] = {
 	"MSG_CLIENT_TERMINATION",
 	"MSG_CLIENT_DISCONNECTED",
 	"MSG_CLIENT_CHAT_READY",
-	"MSG_CLIENT_CHANGE_CONN_FD_REQ"
+	"MSG_CLIENT_CHANGE_CONN_FD_REQ",
+	"MSG_MAX_CLIENT_REACHED"
 };
 
 void handle_rx_msg_lib(int sock,msg_t rx_msg);
@@ -169,6 +170,11 @@ client_err_type_t connect_to_server(void)
 			send_node.msg_type=MSG_CONN_ESTABLISH_ACK;
 			client_err_type_t err = send_msg_to_server(send_node);
 			if(err!=CLIENT_SUCCESS) return CONNECTION_FAILED;
+		}
+		else if(MSG_MAX_CLIENT_REACHED==temp_msg.msg_type)
+		{
+			printf("Server is on its limit, no more client connection allowed.\n");
+			return CONNECTION_FAILED;
 		}
 		else
 		{
